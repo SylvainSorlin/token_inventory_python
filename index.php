@@ -198,9 +198,12 @@ curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); }
 }
 
 // Graph API functions
-function fetchTokens($accessToken)
+function fetchTokens($accessToken, $page = 0, $nextLink = '')
 {
     $url = "https://graph.microsoft.com/beta/directory/authenticationMethodDevices/hardwareOathDevices";
+    if (!empty($nextLink)) {
+        $url = $nextLink;
+    }
     $ch = curl_init(); if (LOCAL_APP  == 1 ) { curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); }
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -239,6 +242,15 @@ curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false); }
         
         // Generic permission error
         throw new Exception("Permission Error: " . $errorMessage . " (HTTP $httpCode)");
+    }
+    
+    if (isset($resp["@odata.nextLink"])) {
+        $data = fetchTokens($accessToken, ++$page, $resp["@odata.nextLink"]);
+        
+        return [
+            'value' => array_merge($data['value'] ?? [], $resp['value'] ?? []),
+            'log' => $resp
+        ];
     }
     
     return ['value' => $resp['value'] ?? [], 'log' => $resp];
