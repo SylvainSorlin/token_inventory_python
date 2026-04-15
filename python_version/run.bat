@@ -1,19 +1,16 @@
 @echo off
-REM Quick run script - checks if dependencies are installed, then runs app
+REM Token Inventory MSAL — Windows launcher
+REM Requires Python 3.10+ in PATH
 
-echo Starting TOTP Token Inventory...
-echo.
+cd /d "%~dp0"
 
-REM Check if venv exists
-if not exist "venv\" (
-    echo Virtual environment not found.
-    echo Running setup first...
-    echo.
-    call setup_dev.bat
+if not exist ".venv" (
+    echo Creating virtual environment...
+    python -m venv .venv
+    call .venv\Scripts\activate.bat
+    pip install -r requirements.txt
+) else (
+    call .venv\Scripts\activate.bat
 )
 
-REM Activate venv and run
-call venv\Scripts\activate.bat
 python main.py
-
-pause

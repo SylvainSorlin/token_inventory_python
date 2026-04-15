@@ -1,179 +1,177 @@
-# TOTP Token Inventory - Python Edition
+# Token Inventory — MSAL Delegated Edition
 
-Modern, lightweight Python application for managing Microsoft Entra ID hardware OATH tokens.
+Python/Tkinter desktop app for managing hardware OATH tokens (Token2 C203, etc.) in Microsoft Entra ID, using **interactive delegated authentication via MSAL**.
 
-## 🚀 Features
+No client secret. No application permissions. Every Graph API call runs under the identity of the signed-in technician, with full Conditional Access, MFA, and audit trail.
 
-- **Modern GUI** with CustomTkinter
-- **Lightweight** - Small footprint, fast startup
-- **Standalone EXE** - No dependencies needed
-- **Full functionality** - Import, Assign, Activate, Manage tokens
-- **Automatic TOTP generation** - Built-in code generation
-- **CSV Import** - Bulk import with multiple modes
+## Architecture
 
-## 📦 Installation
+```
+token_inventory_msal/
+├── main.py                 # Entry point
+├── config.py               # Settings persistence (~/.token_inventory_msal/)
+├── auth.py                 # MSAL PublicClientApplication + token cache
+├── api/
+│   ├── graph_api.py        # Graph client (inventory, assign, activate, CSV import)
+│   └── totp.py             # TOTP code generator (for auto-activation)
+├── gui/
+│   ├── main_window.py      # Main window (toolbar + treeview + context menus)
+│   ├── settings_dialog.py  # Tenant ID + Client ID form (no secret)
+│   └── dialogs.py          # Assign / Activate / Import CSV dialogs
+├── requirements.txt        # msal, requests, pyotp
+├── build_exe.py            # PyInstaller → standalone .exe
+└── run.bat                 # Windows quick launcher
+```
 
-### Option 1: Run from source
+**Key design decisions:**
+
+- **MSAL `PublicClientApplication`** — no client secret at all. Authentication uses `authorization_code` + PKCE handled internally by MSAL. The library opens the system browser for sign-in and listens on a local port for the callback.
+- **Token cache on disk** (`msal_cache.bin`) — MSAL's `SerializableTokenCache` stores the access and refresh tokens locally. On next launch, `acquire_token_silent` reuses the refresh token without opening the browser again (up to 90 days). Cache is cleared on sign-out.
+- **`https://graph.microsoft.com/.default`** as the only scope — since the app registration already declares and has admin-consent for the specific delegated permissions, `.default` tells Entra "give me everything consented on this app". No need to list individual scopes in the code.
+- **Standard tkinter** — no `customtkinter` dependency. Works on Windows, macOS, Linux with the stock Python distribution.
+- **Same Graph API layer** as the upstream project — `fetch_tokens`, `assign_token`, `activate_token`, `import_csv`, etc. all use the beta `hardwareOathDevices` endpoint. The only difference is how the bearer token is obtained.
+
+## Entra app registration setup
+
+1. **New registration** → single tenant, no redirect URI yet.
+2. **Authentication blade:**
+   - Add platform → **Mobile and desktop applications** (this is what MSAL's `acquire_token_interactive` expects)
+   - Add redirect URI: `http://localhost`
+   - Set **Allow public client flows = Yes**
+3. **API permissions** → Microsoft Graph → **Delegated** (not Application):
+   - `Policy.ReadWrite.AuthenticationMethod`
+   - `UserAuthenticationMethod.ReadWrite.All`
+   - `User.Read.All`
+   - `Directory.Read.All`
+   - `offline_access` (for refresh tokens — usually auto-included)
+4. **Grant admin consent** — Privileged Role Administrator or Global Administrator, one time.
+5. **Certificates & secrets** → leave empty. Nothing.
+6. Copy **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
+
+## Install and run
+
+### Option A: from source (recommended for dev/test)
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Python 3.10+
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-# Run application
+pip install -r requirements.txt
 python main.py
 ```
 
-### Option 2: Build standalone executable
+Or on Windows: double-click `run.bat`.
+
+### Option B: standalone .exe
 
 ```bash
-# Install build tools
 pip install pyinstaller
-
-# Build executable
 python build_exe.py
-
-# Run the exe
-dist/TokenInventory.exe
+# Output: dist/TokenInventory.exe
 ```
 
-## 🎯 Requirements
+## First launch
 
-### System Requirements
-- Python 3.11+
-- Windows 10/11 (or Linux/Mac for source)
-- Internet connection
+1. The app opens with a welcome screen → click **Configure app settings**.
+2. Enter the **Tenant ID** and **Client ID** from your Entra app registration. No secret.
+3. Click **Save**. The app opens your system browser to the Microsoft sign-in page.
+4. Authenticate with your Entra account (MFA, CA policies apply as usual).
+5. The browser shows "Authentication complete" → close the tab → back in the app, the token inventory loads automatically.
+6. Top-right shows **Signed in as `your.name@contoso.com`**.
 
-### Microsoft Graph API Permissions
+On subsequent launches, sign-in is silent (refresh token) — the browser won't open unless the token has expired (90 days) or been revoked.
 
-Required permissions in Azure AD App Registration:
-- `Policy.ReadWrite.AuthenticationMethod`
-- `UserAuthenticationMethod.ReadWrite.All`
-- `User.Read.All`
-- `Directory.Read.All`
+## Usage
 
-**Don't forget to grant admin consent!**
+### View inventory
 
-## 📖 Usage
+The main table shows all hardware OATH tokens in the tenant, with serial number, device model, hash function, assigned user, status (available / assigned / activated), and last used date. Click any column header to sort.
 
-### Initial Setup
+### Assign a token
 
-1. Launch the application
-2. Click "Open Settings"
-3. Enter your Microsoft Graph credentials:
-   - Tenant ID
-   - Client ID
-   - Client Secret
-4. Click "Save Settings"
+Right-click an unassigned token → **Assign to user…** → search by name or UPN → select → click **Assign**.
 
-### Managing Tokens
+### Activate a token
 
-- **View Tokens**: Main table shows all tokens
-- **Refresh**: Click refresh button to reload
-- **Assign Token**: Right-click unassigned token → Assign
-- **Activate Token**: Right-click assigned token → Activate
-- **Unassign**: Right-click assigned token → Unassign
-- **Delete**: Right-click unassigned token → Delete
+Right-click an assigned (but not activated) token → **Activate…** → two options:
+- **Manual**: press the button on the physical token, read the 6-digit code, type it in.
+- **Auto-generate**: paste the token's base32 secret key → the app computes the current TOTP code and fills it in automatically.
 
-### CSV Import
+### Import CSV (bulk)
 
-1. Click "Import CSV" button
-2. Select import mode:
-   - **Import Only**: Just create tokens
-   - **Import & Assign**: Create and assign to users
-   - **Import, Assign & Activate**: Full automation
-3. Paste CSV data with format:
-   ```
-   upn,serial number,secret key,timeinterval,manufacturer,model
-   user@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,miniOTP-1
-   ```
-4. Click "Import"
+Click **📥 Import CSV** → paste a Token2 CSV → choose the mode:
+- **Import only**: creates the tokens in the tenant inventory (unassigned).
+- **Import & Assign**: creates + assigns to the user in the `upn` column.
+- **Import, Assign & Activate**: does all three in one shot (auto-computes the OTP from the secret key). This is the fastest mode for bulk deployment.
 
-## 🏗️ Project Structure
-
-```
-python_version/
-├── main.py                 # Entry point
-├── config.py              # Configuration management
-├── api/
-│   ├── graph_api.py       # Microsoft Graph client
-│   └── totp.py           # TOTP generation
-├── gui/
-│   ├── main_window.py    # Main window
-│   ├── settings_window.py # Settings dialog
-│   └── dialogs.py        # Operation dialogs
-├── requirements.txt       # Dependencies
-├── build_exe.py          # Build script
-└── README.md             # This file
+CSV format:
+```csv
+upn,serial number,secret key,timeinterval,manufacturer,model
+alice@contoso.com,GALT11420104,C2dE3fH4iJ5kL6mN7oP1qR2sT3uV4w,30,Token2,C203
 ```
 
-## 🔧 Building for Distribution
+### Sign out
 
-### Standard Build (includes Python)
-```bash
-python build_exe.py
-```
-Result: ~15-20 MB executable
+Click **Sign out** → clears the MSAL token cache and removes the account locally. Does not revoke the refresh token on the Microsoft side (that requires a separate admin action in Entra if needed).
 
-### Optimized Build (smaller size)
-```bash
-# Use UPX compression
-pip install pyinstaller[compression]
+## Role requirements
 
-# Or use Nuitka for better optimization
-pip install nuitka
-python -m nuitka --onefile --windows-disable-console main.py
-```
-Result: ~5-10 MB executable
+The signed-in user must hold the appropriate Entra role:
 
-## 🆚 Comparison with PHP Version
+| Action | Minimum role |
+|---|---|
+| Provision tokens (import into inventory) | Authentication Policy Administrator |
+| Assign / activate / unassign tokens | Authentication Administrator |
+| Delete tokens from inventory | Authentication Policy Administrator |
+| Search users | User.Read.All (delegated permission, no role needed) |
 
-| Feature | PHP Version | Python Version |
-|---------|-------------|----------------|
-| Size | Requires server | Single 15MB .exe |
-| Deployment | Web server needed | Double-click to run |
-| UI | Bootstrap web | Native desktop GUI |
-| Speed | Page loads | Instant response |
-| Offline | No | Config only |
+If the account lacks the required role, Graph returns HTTP 403 and the app displays the error.
 
-## 🐛 Troubleshooting
+## Security
 
-### "No module named customtkinter"
-```bash
-pip install customtkinter
-```
+- **No client secret** stored anywhere — not in config, not in memory, not on disk. The MSAL `PublicClientApplication` uses PKCE internally, which is a per-session ephemeral secret.
+- **Refresh token** is stored in `~/.token_inventory_msal/msal_cache.bin`. This file is the most sensitive artifact on disk: anyone who obtains it can impersonate the technician (within the scope of the delegated permissions) until the token expires. Mitigations:
+  - The file is user-readable only (created under the user's home directory).
+  - Sign out clears and deletes the file.
+  - Entra's Conditional Access policies (device compliance, named locations) apply to the refresh token at renewal time.
+  - On shared workstations, each technician should use a separate OS user account.
+- **Audit trail**: every Graph API call appears in the Entra audit logs under the technician's real UPN, not a service principal. Searching "who assigned token X?" gives a direct answer.
+- **Conditional Access**: MFA, device compliance, named locations, risk-based policies all apply — the sign-in goes through the standard Entra evaluation pipeline.
 
-### "Authentication failed"
-- Check Tenant ID, Client ID, Client Secret
-- Verify API permissions are granted
-- Check admin consent is approved
+## Differences from the upstream project
 
-### "Permission denied"
-- Go to Azure Portal
-- App Registrations → Your App
-- API Permissions → Grant admin consent
+| | Upstream (SylvainSorlin) | This fork |
+|---|---|---|
+| Auth flow | `client_credentials` (app secret) | `authorization_code` + PKCE via MSAL (interactive) |
+| UI framework | `customtkinter` | Standard `tkinter` (no extra dependency) |
+| Client secret | Required, stored in config.json | Not used, not stored anywhere |
+| Graph permissions | Application | Delegated |
+| Audit identity | Service principal | Human user (UPN) |
+| Token cache | N/A (new token per session) | MSAL `SerializableTokenCache` on disk (silent refresh for 90 days) |
+| Conditional Access | Doesn't apply (app flow) | Fully applies (user flow) |
+| Dependencies | `customtkinter`, `requests`, `pyotp`, `Pillow` | `msal`, `requests`, `pyotp` |
 
-### Build fails
-```bash
-# Clear cache
-pip cache purge
+## Troubleshooting
 
-# Reinstall dependencies
-pip install -r requirements.txt --force-reinstall
+**Browser opens but sign-in fails with AADSTS70011**
+The app registration is missing required delegated scopes or admin consent hasn't been granted. Check API permissions in Entra.
 
-# Try build again
-python build_exe.py
-```
+**Browser opens but sign-in fails with AADSTS7000218**
+"Allow public client flows" is not set to Yes in the app registration's Authentication blade.
 
-## 📝 License
+**HTTP 403 on every Graph call**
+Your account lacks the required Entra role (Authentication Administrator or Authentication Policy Administrator). The delegated permissions are granted to the app, but the role determines what the *user* is allowed to do through those permissions.
 
-Same as original PHP version
+**"Sign-in failed: User cancelled"**
+The user closed the browser tab before completing authentication. Click Refresh to try again.
 
-## 🙏 Credits
+**Token cache doesn't refresh (browser opens every time)**
+The `offline_access` scope may not be consented. Add it to the app's delegated permissions and re-consent.
 
-Python version based on the original PHP TOTP Token Inventory by Token2
+## License
 
-## 🔗 Links
-
-- Original PHP version: [GitHub Repository]
-- Microsoft Graph API: https://graph.microsoft.com
-- CustomTkinter: https://github.com/TomSchimansky/CustomTkinter
+Same license as the upstream project.

@@ -1,471 +1,279 @@
 """
-Main Window
-Main application window with token table and operations
+Main application window — token inventory table + toolbar.
 """
-import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import List, Dict, Any
 import threading
+from typing import Dict, Any, Optional
 
 from config import Config
-from api.graph_api import GraphAPIClient, GraphAPIError
-from .settings_window import SettingsWindow
+from auth import AuthManager
+from api.graph_api import GraphClient, GraphError
+from .settings_dialog import SettingsDialog
 from .dialogs import AssignDialog, ActivateDialog, ImportCSVDialog
 
 
-class MainWindow(ctk.CTk):
-    """Main application window"""
+class MainWindow(tk.Tk):
+    """Root window: toolbar + treeview + context menu."""
 
     def __init__(self):
         super().__init__()
-
-        self.title("TOTP Token Inventory")
+        self.title("TOTP Token Inventory (MSAL)")
         self.geometry("1200x700")
 
-        # Configuration
-        self.config = Config()
-        self.api_client = None
+        self.config_mgr = Config()
+        self.auth = AuthManager(self.config_mgr)
+        self.api: Optional[GraphClient] = None
         self.tokens = []
 
-        # Set theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-
-        # Check if credentials exist
-        if not self.config.has_credentials():
-            self._show_initial_settings()
+        if not self.config_mgr.is_configured():
+            self._show_welcome()
         else:
-            self._create_widgets()
-            self._load_tokens()
+            self._build_ui()
+            self._sign_in_and_load()
 
-    def _show_initial_settings(self):
-        """Show settings on first launch"""
-        # Create simple frame with message
-        welcome_frame = ctk.CTkFrame(self)
-        welcome_frame.pack(fill="both", expand=True, padx=50, pady=50)
+    # ── welcome screen (first launch) ────────────────────────────────
 
-        ctk.CTkLabel(
-            welcome_frame,
-            text="Welcome to TOTP Token Inventory",
-            font=ctk.CTkFont(size=24, weight="bold")
-        ).pack(pady=30)
+    def _show_welcome(self):
+        self._welcome = ttk.Frame(self)
+        self._welcome.pack(fill="both", expand=True)
 
-        ctk.CTkLabel(
-            welcome_frame,
-            text="Please configure your Microsoft Graph credentials to get started.",
-            font=ctk.CTkFont(size=14),
-            text_color="gray"
-        ).pack(pady=10)
+        ttk.Label(self._welcome, text="TOTP Token Inventory",
+                  font=("", 22, "bold")).pack(pady=(80, 10))
+        ttk.Label(self._welcome, text="Delegated authentication — no client secret",
+                  foreground="gray", font=("", 12)).pack(pady=4)
+        ttk.Button(self._welcome, text="Configure app settings",
+                   command=self._open_settings_first).pack(pady=24)
 
-        ctk.CTkButton(
-            welcome_frame,
-            text="Open Settings",
-            command=self._open_settings_and_init,
-            height=40,
-            font=ctk.CTkFont(size=14)
-        ).pack(pady=20)
+    def _open_settings_first(self):
+        def after_save():
+            if self.config_mgr.is_configured():
+                self._welcome.destroy()
+                self.auth.reset()
+                self._build_ui()
+                self._sign_in_and_load()
+        SettingsDialog(self, self.config_mgr, after_save)
 
-    def _open_settings_and_init(self):
-        """Open settings and initialize main window after"""
-        def on_save():
-            # Destroy welcome frame
-            for widget in self.winfo_children():
-                widget.destroy()
+    # ── main UI ──────────────────────────────────────────────────────
 
-            # Create main interface
-            if self.config.has_credentials():
-                self._create_widgets()
-                self._load_tokens()
+    def _build_ui(self):
+        # Toolbar
+        tb = ttk.Frame(self); tb.pack(fill="x", padx=8, pady=6)
 
-        SettingsWindow(self, self.config, on_save)
+        ttk.Label(tb, text="🔐 TOTP Token Inventory",
+                  font=("", 15, "bold")).pack(side="left", padx=8)
 
-    def _create_widgets(self):
-        """Create main window widgets"""
+        # Right-side buttons (packed right-to-left)
+        ttk.Button(tb, text="Sign out", command=self._sign_out).pack(side="right", padx=3)
+        ttk.Button(tb, text="⚙ Settings", command=self._open_settings).pack(side="right", padx=3)
+        ttk.Button(tb, text="📥 Import CSV", command=self._open_import).pack(side="right", padx=3)
+        ttk.Button(tb, text="🔄 Refresh", command=self._load_tokens).pack(side="right", padx=3)
 
-        # Top bar
-        top_bar = ctk.CTkFrame(self, height=60)
-        top_bar.pack(fill="x", padx=10, pady=10)
+        # User label
+        self.user_label = ttk.Label(tb, text="", foreground="gray")
+        self.user_label.pack(side="right", padx=10)
 
-        # Title
-        title_label = ctk.CTkLabel(
-            top_bar,
-            text="🔐 TOTP Token Inventory",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        title_label.pack(side="left", padx=20)
-
-        # Buttons frame
-        buttons_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
-        buttons_frame.pack(side="right", padx=10)
-
-        # Refresh button
-        refresh_btn = ctk.CTkButton(
-            buttons_frame,
-            text="🔄 Refresh",
-            command=self._load_tokens,
-            width=100
-        )
-        refresh_btn.pack(side="left", padx=5)
-
-        # Import CSV button
-        import_btn = ctk.CTkButton(
-            buttons_frame,
-            text="📥 Import CSV",
-            command=self._open_import_dialog,
-            width=120,
-            fg_color="#2196F3"
-        )
-        import_btn.pack(side="left", padx=5)
-
-        # Settings button
-        settings_btn = ctk.CTkButton(
-            buttons_frame,
-            text="⚙️ Settings",
-            command=lambda: SettingsWindow(self, self.config, self._on_settings_saved),
-            width=100,
-            fg_color="gray"
-        )
-        settings_btn.pack(side="left", padx=5)
-
-        # Clear session button
-        clear_btn = ctk.CTkButton(
-            buttons_frame,
-            text="🚪 Logout",
-            command=self._clear_session,
-            width=100,
-            fg_color="red",
-            hover_color="darkred"
-        )
-        clear_btn.pack(side="left", padx=5)
-
-        # Status bar
-        self.status_label = ctk.CTkLabel(
-            self,
-            text="Ready",
-            font=ctk.CTkFont(size=12),
-            anchor="w"
-        )
-        self.status_label.pack(fill="x", padx=20, pady=(0, 5))
-
-        # Table frame
-        table_frame = ctk.CTkFrame(self)
-        table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
-        # Create Treeview with scrollbars
-        tree_container = ctk.CTkFrame(table_frame)
-        tree_container.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Scrollbars
-        vsb = ttk.Scrollbar(tree_container, orient="vertical")
-        hsb = ttk.Scrollbar(tree_container, orient="horizontal")
+        # Status
+        self.status = ttk.Label(self, text="Initializing…", anchor="w")
+        self.status.pack(fill="x", padx=14, pady=(0, 2))
 
         # Treeview
-        columns = ("Serial", "Device", "Hash", "Time", "User", "Status", "Last Seen")
-        self.tree = ttk.Treeview(
-            tree_container,
-            columns=columns,
-            show="tree headings",
-            yscrollcommand=vsb.set,
-            xscrollcommand=hsb.set
-        )
+        cols = ("Serial", "Device", "Hash", "Time", "User", "Status", "Last seen")
+        container = ttk.Frame(self); container.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
+        vsb = ttk.Scrollbar(container, orient="vertical")
+        hsb = ttk.Scrollbar(container, orient="horizontal")
+        self.tree = ttk.Treeview(container, columns=cols, show="headings",
+                                 yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         vsb.config(command=self.tree.yview)
         hsb.config(command=self.tree.xview)
 
-        # Configure columns
-        self.tree.column("#0", width=0, stretch=False)
-        self.tree.column("Serial", width=120, anchor="w")
-        self.tree.column("Device", width=150, anchor="w")
-        self.tree.column("Hash", width=100, anchor="center")
-        self.tree.column("Time", width=60, anchor="center")
-        self.tree.column("User", width=200, anchor="w")
-        self.tree.column("Status", width=100, anchor="center")
-        self.tree.column("Last Seen", width=150, anchor="center")
+        widths = {"Serial": 120, "Device": 160, "Hash": 90, "Time": 55,
+                  "User": 220, "Status": 90, "Last seen": 150}
+        for c in cols:
+            self.tree.heading(c, text=c, command=lambda _c=c: self._sort(_c))
+            self.tree.column(c, width=widths.get(c, 100), anchor="center" if c in ("Hash", "Time", "Status") else "w")
 
-        # Headings
-        for col in columns:
-            self.tree.heading(col, text=col, command=lambda c=col: self._sort_column(c))
-
-        # Style
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            borderwidth=0,
-            font=('Arial', 10)
-        )
-        style.configure("Treeview.Heading", font=('Arial', 10, 'bold'))
-        style.map('Treeview', background=[('selected', '#1f538d')])
-
-        # Grid layout
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
 
-        tree_container.grid_rowconfigure(0, weight=1)
-        tree_container.grid_columnconfigure(0, weight=1)
+        self.tree.bind("<Button-3>", self._ctx_menu)
+        self.tree.bind("<Double-1>", self._dbl_click)
 
-        # Context menu
-        self.tree.bind("<Button-3>", self._show_context_menu)
-        self.tree.bind("<Double-1>", self._on_double_click)
+    # ── sign-in ──────────────────────────────────────────────────────
 
-    def _sort_column(self, col):
-        """Sort treeview by column"""
-        items = [(self.tree.set(item, col), item) for item in self.tree.get_children('')]
-        items.sort()
+    def _sign_in_and_load(self):
+        """Acquire a token (silent or interactive) then load the inventory."""
+        self.status.config(text="Signing in…")
 
-        for index, (val, item) in enumerate(items):
-            self.tree.move(item, '', index)
+        def work():
+            try:
+                self.auth.get_access_token()          # may open a browser
+                self.api = GraphClient(self.auth)
+                user = self.auth.signed_in_user or ""
+                self.after(0, lambda: self.user_label.config(text=f"Signed in as {user}"))
+                self.after(0, self._load_tokens)
+            except Exception as e:
+                self.after(0, lambda: self._error(f"Sign-in failed: {e}"))
+                self.after(0, lambda: self.status.config(text="Not signed in"))
 
-    def _on_settings_saved(self):
-        """Handle settings save"""
-        self._load_tokens()
+        threading.Thread(target=work, daemon=True).start()
+
+    def _sign_out(self):
+        if messagebox.askyesno("Sign out", "Sign out and clear cached tokens?"):
+            self.auth.sign_out()
+            self.api = None
+            self.user_label.config(text="")
+            self.status.config(text="Signed out")
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+
+    # ── token loading ────────────────────────────────────────────────
 
     def _load_tokens(self):
-        """Load tokens from API"""
-        if not self.config.has_credentials():
-            self._show_error("Please configure credentials in Settings")
+        if not self.api:
+            self._sign_in_and_load()
             return
+        self.status.config(text="Loading tokens…")
 
-        self.status_label.configure(text="Loading tokens...", text_color="blue")
-
-        # Run in thread to avoid blocking UI
-        def load():
+        def work():
             try:
-                # Create API client
-                self.api_client = GraphAPIClient(
-                    self.config.tenant_id,
-                    self.config.client_id,
-                    self.config.client_secret
-                )
+                self.tokens = self.api.fetch_tokens()
+                self.after(0, self._refresh_table)
+                self.after(0, lambda: self.status.config(text=f"{len(self.tokens)} token(s)"))
+            except GraphError as e:
+                self.after(0, lambda: self._error(f"Load failed: {e}"))
+                self.after(0, lambda: self.status.config(text="Load failed"))
 
-                # Fetch tokens
-                self.tokens = self.api_client.fetch_tokens()
+        threading.Thread(target=work, daemon=True).start()
 
-                # Update UI in main thread
-                self.after(0, self._update_table)
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"Loaded {len(self.tokens)} tokens",
-                    text_color="green"
-                ))
-
-            except GraphAPIError as e:
-                self.after(0, lambda: self._show_error(f"API Error: {e.message}"))
-                self.after(0, lambda: self.status_label.configure(
-                    text="Failed to load tokens",
-                    text_color="red"
-                ))
-
-        threading.Thread(target=load, daemon=True).start()
-
-    def _update_table(self):
-        """Update token table"""
-        # Clear existing items
+    def _refresh_table(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
-
-        # Add tokens
-        for token in self.tokens:
-            serial = token.get('serialNumber', '')
-            manufacturer = token.get('manufacturer', '')
-            model = token.get('model', '')
-            hash_func = token.get('hashFunction', '')
-            time_interval = token.get('timeIntervalInSeconds', 30)
-            status = token.get('status', '')
-
-            assigned_to = token.get('assignedTo', {})
-            user_name = assigned_to.get('displayName', 'Unassigned') if assigned_to else 'Unassigned'
-
-            last_used = token.get('lastUsedDateTime', 'Never')
-
-            values = (
-                serial,
-                f"{manufacturer}/{model}",
-                hash_func,
-                f"{time_interval}s",
-                user_name,
-                status,
-                last_used
+        for t in self.tokens:
+            assigned = t.get("assignedTo") or {}
+            user = assigned.get("displayName", "Unassigned") if assigned else "Unassigned"
+            vals = (
+                t.get("serialNumber", ""),
+                f"{t.get('manufacturer', '')}/{t.get('model', '')}",
+                t.get("hashFunction", ""),
+                f"{t.get('timeIntervalInSeconds', 30)}s",
+                user,
+                t.get("status", ""),
+                t.get("lastUsedDateTime", "Never"),
             )
+            self.tree.insert("", "end", iid=t["id"], values=vals)
 
-            # Store token data in item
-            item_id = self.tree.insert("", "end", values=values, tags=(token.get('id'),))
+    def _sort(self, col):
+        data = [(self.tree.set(k, col), k) for k in self.tree.get_children("")]
+        data.sort()
+        for i, (_, k) in enumerate(data):
+            self.tree.move(k, "", i)
 
-    def _show_context_menu(self, event):
-        """Show context menu on right-click"""
-        # Select item under cursor
+    # ── context menu ─────────────────────────────────────────────────
+
+    def _selected_token(self) -> Optional[Dict[str, Any]]:
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        tid = sel[0]
+        return next((t for t in self.tokens if t.get("id") == tid), None)
+
+    def _ctx_menu(self, event):
         item = self.tree.identify_row(event.y)
         if not item:
             return
-
         self.tree.selection_set(item)
-        token = self._get_selected_token()
-
-        if not token:
+        tok = self._selected_token()
+        if not tok:
             return
-
-        # Create context menu
         menu = tk.Menu(self, tearoff=0)
-
-        assigned_to = token.get('assignedTo')
-        status = token.get('status', '')
-
-        if not assigned_to:
-            # Unassigned token
-            menu.add_command(label="Assign to User", command=self._assign_token)
+        assigned = tok.get("assignedTo")
+        if not assigned:
+            menu.add_command(label="Assign to user…", command=self._assign)
             menu.add_separator()
-            menu.add_command(label="Delete Token", command=self._delete_token)
+            menu.add_command(label="Delete token", command=self._delete)
         else:
-            # Assigned token
-            if status != 'activated':
-                menu.add_command(label="Activate", command=self._activate_token)
-
-            menu.add_command(label="Unassign", command=self._unassign_token)
-
+            if tok.get("status") != "activated":
+                menu.add_command(label="Activate…", command=self._activate)
+            menu.add_command(label="Unassign", command=self._unassign)
         menu.post(event.x_root, event.y_root)
 
-    def _on_double_click(self, event):
-        """Handle double-click on token"""
-        token = self._get_selected_token()
-        if not token:
+    def _dbl_click(self, _):
+        tok = self._selected_token()
+        if not tok:
             return
+        if not tok.get("assignedTo"):
+            self._assign()
+        elif tok.get("status") != "activated":
+            self._activate()
 
-        assigned_to = token.get('assignedTo')
-        status = token.get('status', '')
+    # ── actions ──────────────────────────────────────────────────────
 
-        if not assigned_to:
-            self._assign_token()
-        elif status != 'activated':
-            self._activate_token()
+    def _assign(self):
+        tok = self._selected_token()
+        if tok and self.api:
+            AssignDialog(self, self.api, tok["id"], tok.get("serialNumber", ""), self._load_tokens)
 
-    def _get_selected_token(self) -> Dict[str, Any]:
-        """Get currently selected token"""
-        selection = self.tree.selection()
-        if not selection:
-            return None
-
-        item = selection[0]
-        tags = self.tree.item(item, 'tags')
-        if not tags:
-            return None
-
-        token_id = tags[0]
-
-        # Find token in list
-        for token in self.tokens:
-            if token.get('id') == token_id:
-                return token
-
-        return None
-
-    def _assign_token(self):
-        """Open assign dialog"""
-        token = self._get_selected_token()
-        if not token:
+    def _activate(self):
+        tok = self._selected_token()
+        if not tok or not self.api:
             return
-
-        AssignDialog(
-            self,
-            self.api_client,
-            token.get('id'),
-            token.get('serialNumber'),
-            self._load_tokens
-        )
-
-    def _activate_token(self):
-        """Open activate dialog"""
-        token = self._get_selected_token()
-        if not token:
+        assigned = tok.get("assignedTo") or {}
+        if not assigned:
+            self._error("Token must be assigned first")
             return
+        ActivateDialog(self, self.api, tok["id"], assigned["id"],
+                       tok.get("serialNumber", ""), assigned.get("displayName", ""),
+                       self._load_tokens)
 
-        assigned_to = token.get('assignedTo', {})
-        if not assigned_to:
-            self._show_error("Token must be assigned first")
+    def _unassign(self):
+        tok = self._selected_token()
+        if not tok or not self.api:
             return
-
-        ActivateDialog(
-            self,
-            self.api_client,
-            token.get('id'),
-            assigned_to.get('id'),
-            token.get('serialNumber'),
-            assigned_to.get('displayName', ''),
-            self._load_tokens
-        )
-
-    def _unassign_token(self):
-        """Unassign token from user"""
-        token = self._get_selected_token()
-        if not token:
+        assigned = tok.get("assignedTo") or {}
+        if not assigned:
             return
-
-        assigned_to = token.get('assignedTo', {})
-        if not assigned_to:
-            return
-
         if not messagebox.askyesno("Confirm", "Unassign this token?"):
             return
-
-        self.status_label.configure(text="Unassigning token...", text_color="blue")
-
-        def unassign():
+        self.status.config(text="Unassigning…")
+        def work():
             try:
-                self.api_client.unassign_token(assigned_to.get('id'), token.get('id'))
-                self.after(0, lambda: self.status_label.configure(
-                    text="Token unassigned successfully",
-                    text_color="green"
-                ))
+                self.api.unassign_token(assigned["id"], tok["id"])
                 self.after(0, self._load_tokens)
+            except GraphError as e:
+                self.after(0, lambda: self._error(f"Unassign failed: {e}"))
+        threading.Thread(target=work, daemon=True).start()
 
-            except GraphAPIError as e:
-                self.after(0, lambda: self._show_error(f"Unassign failed: {e.message}"))
-
-        threading.Thread(target=unassign, daemon=True).start()
-
-    def _delete_token(self):
-        """Delete token permanently"""
-        token = self._get_selected_token()
-        if not token:
+    def _delete(self):
+        tok = self._selected_token()
+        if not tok or not self.api:
             return
-
-        if not messagebox.askyesno("Confirm", "Delete this token permanently? This cannot be undone."):
+        if not messagebox.askyesno("Confirm", "Delete this token permanently?"):
             return
-
-        self.status_label.configure(text="Deleting token...", text_color="blue")
-
-        def delete():
+        self.status.config(text="Deleting…")
+        def work():
             try:
-                self.api_client.delete_token(token.get('id'))
-                self.after(0, lambda: self.status_label.configure(
-                    text="Token deleted successfully",
-                    text_color="green"
-                ))
+                self.api.delete_token(tok["id"])
                 self.after(0, self._load_tokens)
+            except GraphError as e:
+                self.after(0, lambda: self._error(f"Delete failed: {e}"))
+        threading.Thread(target=work, daemon=True).start()
 
-            except GraphAPIError as e:
-                self.after(0, lambda: self._show_error(f"Delete failed: {e.message}"))
+    def _open_import(self):
+        if self.api:
+            ImportCSVDialog(self, self.api, self._load_tokens)
 
-        threading.Thread(target=delete, daemon=True).start()
+    def _open_settings(self):
+        def after():
+            self.auth.reset()
+            self._sign_in_and_load()
+        SettingsDialog(self, self.config_mgr, after)
 
-    def _open_import_dialog(self):
-        """Open CSV import dialog"""
-        if not self.api_client:
-            self._show_error("Please load tokens first")
-            return
+    # ── util ─────────────────────────────────────────────────────────
 
-        ImportCSVDialog(self, self.api_client, self._load_tokens)
-
-    def _clear_session(self):
-        """Clear session and restart"""
-        if messagebox.askyesno("Confirm", "Clear all settings and logout?"):
-            self.config.clear_credentials()
-            self.destroy()
-            # Could restart app here
-
-    def _show_error(self, message: str):
-        """Show error message"""
-        messagebox.showerror("Error", message)
+    def _error(self, msg):
+        messagebox.showerror("Error", msg)

@@ -1,90 +1,70 @@
 """
-Configuration management for Token Inventory
-Stores credentials securely in local JSON file
+Configuration management — stores app settings locally (no secrets).
 """
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
+
 class Config:
-    """Manages application configuration"""
+    """Manages Tenant ID, Client ID and UI preferences. No client secret."""
 
     def __init__(self):
-        self.config_dir = Path.home() / ".token_inventory"
+        self.config_dir = Path.home() / ".token_inventory_msal"
         self.config_file = self.config_dir / "config.json"
-        self._ensure_config_dir()
-        self._config = self._load_config()
-
-    def _ensure_config_dir(self):
-        """Create config directory if it doesn't exist"""
         self.config_dir.mkdir(exist_ok=True)
+        self._data = self._load()
 
-    def _load_config(self) -> dict:
-        """Load configuration from file"""
+    # ── persistence ──────────────────────────────────────────────────
+
+    def _load(self) -> dict:
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
+                return json.loads(self.config_file.read_text())
             except Exception:
                 return {}
         return {}
 
-    def _save_config(self):
-        """Save configuration to file"""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self._config, f, indent=2)
-        except Exception as e:
-            print(f"Error saving config: {e}")
+    def _save(self):
+        self.config_file.write_text(json.dumps(self._data, indent=2))
 
-    def get(self, key: str, default=None):
-        """Get configuration value"""
-        return self._config.get(key, default)
+    # ── accessors ────────────────────────────────────────────────────
 
-    def set(self, key: str, value):
-        """Set configuration value"""
-        self._config[key] = value
-        self._save_config()
-
-    # Convenience properties
     @property
     def tenant_id(self) -> Optional[str]:
-        return self.get('tenant_id')
+        return self._data.get("tenant_id")
 
     @tenant_id.setter
     def tenant_id(self, value: str):
-        self.set('tenant_id', value)
+        self._data["tenant_id"] = value
+        self._save()
 
     @property
     def client_id(self) -> Optional[str]:
-        return self.get('client_id')
+        return self._data.get("client_id")
 
     @client_id.setter
     def client_id(self, value: str):
-        self.set('client_id', value)
-
-    @property
-    def client_secret(self) -> Optional[str]:
-        return self.get('client_secret')
-
-    @client_secret.setter
-    def client_secret(self, value: str):
-        self.set('client_secret', value)
+        self._data["client_id"] = value
+        self._save()
 
     @property
     def show_logs(self) -> bool:
-        return self.get('show_logs', True)
+        return self._data.get("show_logs", True)
 
     @show_logs.setter
     def show_logs(self, value: bool):
-        self.set('show_logs', value)
+        self._data["show_logs"] = value
+        self._save()
 
-    def has_credentials(self) -> bool:
-        """Check if all required credentials are set"""
-        return all([self.tenant_id, self.client_id, self.client_secret])
+    def is_configured(self) -> bool:
+        return bool(self.tenant_id and self.client_id)
 
-    def clear_credentials(self):
-        """Clear all stored credentials"""
-        self._config = {}
-        self._save_config()
+    def clear(self):
+        self._data = {}
+        self._save()
+
+    @property
+    def cache_path(self) -> Path:
+        """Path for the MSAL token cache (separate from config)."""
+        return self.config_dir / "msal_cache.bin"
