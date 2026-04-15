@@ -32,9 +32,9 @@ echo "========================================"
 echo
 echo "To run the application:"
 echo "  1. Activate virtual environment: source venv/bin/activate"
-echo "  2. Run: python main.py"
+echo "  2. Run: python3 main.py"
 echo
 echo "To build executable:"
 echo "  1. pip install pyinstaller"
-echo "  2. python build_exe.py"
+echo "  2. python3 build_exe.py"
 echo
