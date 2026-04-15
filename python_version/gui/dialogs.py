@@ -215,18 +215,25 @@ class ImportCSVDialog(tk.Toplevel):
         # Mode selector
         mf = ttk.LabelFrame(self, text="Import mode"); mf.pack(padx=14, pady=4, fill="x")
         self.mode_var = tk.StringVar(value="import_assign_activate")
+        self.mode_var.trace_add("write", self._on_mode_change)
         for label, val in [("Import only", "import_only"),
                            ("Import & Assign", "import_assign"),
                            ("Import, Assign & Activate", "import_assign_activate")]:
             ttk.Radiobutton(mf, text=label, variable=self.mode_var, value=val).pack(anchor="w", padx=20, pady=1)
+        self.placeholders = {
+            "import_only": "serial number,secret key,timeinterval,manufacturer,model\n1100000,JBSWY3DPEHPK3PXP,30,Token2,C203",
+            "import_assign": "upn,serial number,secret key,timeinterval,manufacturer,model\nuser@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,C203",
+            "import_assign_activate": "upn,serial number,secret key,timeinterval,manufacturer,model\nuser@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,C203"
+        }
 
         # CSV text area
         cf = ttk.LabelFrame(self, text="CSV data"); cf.pack(padx=14, pady=4, fill="both", expand=True)
-        self.csv_text = tk.Text(cf, wrap="none", font=("Consolas", 10))
+        self.csv_text = tk.Text(cf, wrap="none", font=("Consolas", 10), height=10)
         self.csv_text.pack(fill="both", expand=True, padx=4, pady=4)
-        placeholder = ("upn,serial number,secret key,timeinterval,manufacturer,model\n"
-                       "user@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,C203")
-        self.csv_text.insert("1.0", placeholder)
+        self._on_mode_change()
+        #placeholder = ("upn,serial number,secret key,timeinterval,manufacturer,model\n"
+        #               "user@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,C203")
+        #self.csv_text.insert("1.0", placeholder)
 
         self.status = ttk.Label(self, text="", wraplength=580)
         self.status.pack(pady=4)
@@ -235,6 +242,19 @@ class ImportCSVDialog(tk.Toplevel):
         self.imp_btn = ttk.Button(bf, text="Import", command=self._import)
         self.imp_btn.pack(side="left", padx=4)
         ttk.Button(bf, text="Cancel", command=self.destroy).pack(side="left", padx=4)
+        
+    def _on_mode_change(self, *args):
+        current = self.csv_text.get("1.0", "end-1c").strip()
+
+        # Ne change que si vide ou déjà égal à un placeholder
+        if current and current not in self.placeholders.values():
+            return
+
+        mode = self.mode_var.get()
+        placeholder = self.placeholders.get(mode, "")
+
+        self.csv_text.delete("1.0", "end")
+        self.csv_text.insert("1.0", placeholder)
 
     def _import(self):
         csv_data = self.csv_text.get("1.0", "end-1c").strip()
