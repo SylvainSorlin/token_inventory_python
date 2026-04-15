@@ -11,6 +11,7 @@ def build():
         "--onefile",
         "--windowed",
         "--name", "TokenInventory",
+        "--icon", "favico.ico",
         "--add-data", "api;api",
         "--add-data", "gui;gui",
         "--add-data", "config.py;.",

@@ -26,6 +26,7 @@ class AssignDialog(tk.Toplevel):
 
         self.title(f"Assign token {serial}")
         self.geometry("520x420")
+        self.minsize(520, 420)
         self.transient(parent)
         self.grab_set()
 
@@ -133,6 +134,7 @@ class ActivateDialog(tk.Toplevel):
 
         self.title(f"Activate {serial}")
         self.geometry("440x330")
+        self.minsize(440, 330)
         self.transient(parent)
         self.grab_set()
 
@@ -203,6 +205,7 @@ class ImportCSVDialog(tk.Toplevel):
 
         self.title("Import CSV tokens")
         self.geometry("620x520")
+        self.minsize(620, 520)
         self.transient(parent)
         self.grab_set()
 

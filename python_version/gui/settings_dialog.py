@@ -17,7 +17,8 @@ class SettingsDialog(tk.Toplevel):
         self.on_save = on_save
 
         self.title("Settings")
-        self.geometry("500x380")
+        self.geometry("500x400")
+        self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 

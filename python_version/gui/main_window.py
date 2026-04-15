@@ -20,6 +20,7 @@ class MainWindow(tk.Tk):
         super().__init__()
         self.title("TOTP Token Inventory (MSAL)")
         self.geometry("1200x700")
+        self.minsize(1000, 300)
 
         self.config_mgr = Config()
         self.auth = AuthManager(self.config_mgr)
