@@ -7,6 +7,8 @@ Token cache persisted to disk so the user isn't prompted at every launch.
 """
 import json
 import atexit
+import os
+import stat
 from typing import Optional
 
 import msal
@@ -38,7 +40,10 @@ class AuthManager:
 
     def _save_cache(self):
         if self._cache.has_state_changed:
-            self._config.cache_path.write_text(self._cache.serialize())
+            cache_file = self._config.cache_path
+            cache_file.write_text(self._cache.serialize())
+            # Sécuriser les permissions : lisible/modifiable par le propriétaire uniquement
+            os.chmod(cache_file, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
 
     # ── MSAL app ─────────────────────────────────────────────────────
 

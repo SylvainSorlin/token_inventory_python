@@ -7,6 +7,10 @@ import hmac
 import hashlib
 import time
 import struct
+import logging
+
+# Logger configuré pour ne pas afficher les secrets
+logger = logging.getLogger(__name__)
 
 def generate_totp_code(secret: str, time_interval: int = 30) -> str:
     """
@@ -53,8 +57,9 @@ def generate_totp_code(secret: str, time_interval: int = 30) -> str:
         # Return as 6-digit string with leading zeros
         return str(code).zfill(6)
 
-    except Exception as e:
-        print(f"TOTP generation error: {e}")
+    except Exception:
+        # Ne pas logger les détails pour éviter d'exposer des secrets
+        logger.debug("TOTP generation failed - invalid secret format")
         return ""
 
 def validate_base32_secret(secret: str) -> tuple[bool, str]:

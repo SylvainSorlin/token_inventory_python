@@ -2,6 +2,8 @@
 Configuration management — stores app settings locally (no secrets).
 """
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +29,8 @@ class Config:
 
     def _save(self):
         self.config_file.write_text(json.dumps(self._data, indent=2))
+        # Sécuriser les permissions du fichier de configuration
+        os.chmod(self.config_file, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
 
     # ── accessors ────────────────────────────────────────────────────
 

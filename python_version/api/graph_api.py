@@ -49,6 +49,11 @@ class GraphClient:
             msg = body.get("error", {}).get("message", resp.text[:300])
         except Exception:
             msg = resp.text[:300]
+
+        # Sanitize: ne jamais exposer de tokens/secrets dans les messages d'erreur
+        if "Authorization" in msg or "Bearer" in msg or "token" in msg.lower():
+            msg = f"{context}: Authentication error (details sanitized for security)"
+
         if resp.status_code in (401, 403) and "Insufficient privileges" in msg:
             msg = (
                 f"{context}: missing Graph permissions.\n"
@@ -64,7 +69,7 @@ class GraphClient:
     def fetch_tokens(self) -> List[Dict[str, Any]]:
         tokens, url = [], INVENTORY
         while url:
-            r = requests.get(url, headers=self._headers(), timeout=30)
+            r = requests.get(url, headers=self._headers(), timeout=30, verify=True)
             self._raise_on_error(r, "Fetch tokens")
             data = r.json()
             tokens.extend(data.get("value", []))
@@ -72,12 +77,12 @@ class GraphClient:
         return tokens
 
     def import_token(self, token_data: dict) -> dict:
-        r = requests.post(INVENTORY, headers=self._headers(), json=token_data, timeout=30)
+        r = requests.post(INVENTORY, headers=self._headers(), json=token_data, timeout=30, verify=True)
         self._raise_on_error(r, "Import token")
         return r.json()
 
     def delete_token(self, token_id: str) -> bool:
-        r = requests.delete(f"{INVENTORY}/{token_id}", headers=self._headers(), timeout=30)
+        r = requests.delete(f"{INVENTORY}/{token_id}", headers=self._headers(), timeout=30, verify=True)
         self._raise_on_error(r, "Delete token")
         return r.status_code in (200, 204)
 
@@ -85,19 +90,19 @@ class GraphClient:
 
     def assign_token(self, user_id: str, token_id: str) -> dict:
         url = f"{GRAPH_BETA}/users/{user_id}/authentication/hardwareOathMethods"
-        r = requests.post(url, headers=self._headers(), json={"device": {"id": token_id}}, timeout=30)
+        r = requests.post(url, headers=self._headers(), json={"device": {"id": token_id}}, timeout=30, verify=True)
         self._raise_on_error(r, "Assign token")
         return r.json() if r.text else {}
 
     def unassign_token(self, user_id: str, token_id: str) -> bool:
         url = f"{GRAPH_BETA}/users/{user_id}/authentication/hardwareOathMethods/{token_id}"
-        r = requests.delete(url, headers=self._headers(), timeout=30)
+        r = requests.delete(url, headers=self._headers(), timeout=30, verify=True)
         self._raise_on_error(r, "Unassign token")
         return r.status_code in (200, 204)
 
     def activate_token(self, user_id: str, token_id: str, code: str) -> bool:
         url = f"{GRAPH_BETA}/users/{user_id}/authentication/hardwareOathMethods/{token_id}/activate"
-        r = requests.post(url, headers=self._headers(), json={"verificationCode": code}, timeout=30)
+        r = requests.post(url, headers=self._headers(), json={"verificationCode": code}, timeout=30, verify=True)
         self._raise_on_error(r, "Activate token")
         return r.status_code in (200, 204)
 
@@ -105,11 +110,13 @@ class GraphClient:
 
     def search_users(self, query: str = "") -> List[Dict[str, Any]]:
         if query:
-            flt = f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}')"
+            # Échapper les single quotes pour éviter l'injection OData
+            query_escaped = query.replace("'", "''")
+            flt = f"startswith(displayName,'{query_escaped}') or startswith(userPrincipalName,'{query_escaped}')"
             url = f"{GRAPH_V1}/users?$top=50&$filter={requests.utils.quote(flt)}"
         else:
             url = f"{GRAPH_V1}/users?$top=50"
-        r = requests.get(url, headers=self._headers(), timeout=30)
+        r = requests.get(url, headers=self._headers(), timeout=30, verify=True)
         self._raise_on_error(r, "Search users")
         return r.json().get("value", [])
 
