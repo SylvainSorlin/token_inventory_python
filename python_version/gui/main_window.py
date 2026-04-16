@@ -11,6 +11,7 @@ from auth import AuthManager
 from api.graph_api import GraphClient, GraphError
 from .settings_dialog import SettingsDialog
 from .dialogs import AssignDialog, ActivateDialog, ImportCSVDialog
+from . import get_icon_path
 
 
 class MainWindow(tk.Tk):
@@ -21,6 +22,12 @@ class MainWindow(tk.Tk):
         self.title("TOTP Token Inventory (MSAL)")
         self.geometry("1200x700")
         self.minsize(1000, 300)
+
+        # Set window icon
+        try:
+            self.iconbitmap(get_icon_path())
+        except Exception:
+            pass  # Ignore if icon file not found
 
         self.config_mgr = Config()
         self.auth = AuthManager(self.config_mgr)

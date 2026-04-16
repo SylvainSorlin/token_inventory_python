@@ -9,6 +9,7 @@ from typing import Callable
 
 from api.graph_api import GraphClient, GraphError
 from api.totp import generate_totp_code
+from . import get_icon_path
 
 
 class AssignDialog(tk.Toplevel):
@@ -29,6 +30,12 @@ class AssignDialog(tk.Toplevel):
         self.minsize(520, 420)
         self.transient(parent)
         self.grab_set()
+
+        # Set window icon
+        try:
+            self.iconbitmap(get_icon_path())
+        except Exception:
+            pass
 
         ttk.Label(self, text=f"Assign {serial} to…",
                   font=("", 13, "bold")).pack(pady=(12, 4))
@@ -138,6 +145,12 @@ class ActivateDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
+        # Set window icon
+        try:
+            self.iconbitmap(get_icon_path())
+        except Exception:
+            pass
+
         ttk.Label(self, text=f"Activate {serial}",
                   font=("", 13, "bold")).pack(pady=(12, 2))
         ttk.Label(self, text=f"for {user_name}",
@@ -208,6 +221,12 @@ class ImportCSVDialog(tk.Toplevel):
         self.minsize(620, 520)
         self.transient(parent)
         self.grab_set()
+
+        # Set window icon
+        try:
+            self.iconbitmap(get_icon_path())
+        except Exception:
+            pass
 
         ttk.Label(self, text="Import CSV Tokens",
                   font=("", 14, "bold")).pack(pady=10)

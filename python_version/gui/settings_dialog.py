@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox
 from typing import Callable, Optional
 
 from config import Config
+from . import get_icon_path
 
 
 class SettingsDialog(tk.Toplevel):
@@ -21,6 +22,12 @@ class SettingsDialog(tk.Toplevel):
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
+
+        # Set window icon
+        try:
+            self.iconbitmap(get_icon_path())
+        except Exception:
+            pass
 
         # Form
         ttk.Label(self, text="Microsoft Entra App Settings",
