@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Callable, Optional
 from utils import center_tk_window
+import webbrowser
 
 from config import Config
 from . import get_icon_path
@@ -19,7 +20,7 @@ class SettingsDialog(tk.Toplevel):
         self.on_save = on_save
 
         self.title("Settings")
-        self.geometry("500x500")
+        self.geometry("500x390")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -64,20 +65,13 @@ class SettingsDialog(tk.Toplevel):
         interval_combo.pack(side="left")
         ttk.Label(interval_frame, text="seconds").pack(side="left", padx=(5, 0))
 
-        # Info
-        info = (
-            "Entra app registration requirements:\n"
-            "  • Redirect URI: http://localhost (Web)\n"
-            "  • Allow public client flows: Yes\n"
-            "  • Delegated permissions (admin-consented):\n"
-            "      Policy.ReadWrite.AuthenticationMethod\n"
-            "      UserAuthenticationMethod.ReadWrite.All\n"
-            "      User.Read.All · Directory.Read.All\n"
-            "  • No client secret needed"
-        )
-        ttk.Label(self, text=info, foreground="gray", justify="left",
-                  font=("", 9)).pack(padx=18, anchor="w", pady=(4, 8))
-
+        # Github
+        github_url = "https://github.com/SylvainSorlin/token_inventory_python"
+        url_label = ttk.Label(self, text=github_url, foreground="blue", justify="left", cursor="hand2",
+                  font=("", 9))
+        url_label.pack(padx=18, anchor="w", pady=(4, 8))
+        url_label.bind("<Button-1>", lambda e: webbrowser.open_new(github_url))
+        
         # Buttons
         bf = ttk.Frame(self); bf.pack(pady=8)
         ttk.Button(bf, text="Save", command=self._save).pack(side="left", padx=4)

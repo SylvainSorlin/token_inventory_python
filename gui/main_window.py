@@ -33,7 +33,9 @@ class MainWindow(tk.Tk):
         self.auth = AuthManager(self.config_mgr)
         self.api: Optional[GraphClient] = None
         self.tokens = []
+        self.filtered_tokens = []
         self._refresh_job = None
+        self.filter_vars = {}
 
         if not self.config_mgr.is_configured():
             self._show_welcome()
@@ -81,6 +83,35 @@ class MainWindow(tk.Tk):
         # User label
         self.user_label = ttk.Label(tb, text="", foreground="gray")
         self.user_label.pack(side="right", padx=10)
+
+        # Filter bar
+        filter_frame = ttk.Frame(self)
+        filter_frame.pack(fill="x", padx=8, pady=(0, 6))
+
+        ttk.Label(filter_frame, text="🔍 Filters:", font=("", 10, "bold")).pack(side="left", padx=(8, 10))
+
+        # Serial filter
+        ttk.Label(filter_frame, text="Serial:").pack(side="left", padx=(0, 2))
+        self.filter_vars["serial"] = tk.StringVar()
+        self.filter_vars["serial"].trace_add("write", lambda *_: self._apply_filters())
+        ttk.Entry(filter_frame, textvariable=self.filter_vars["serial"], width=12).pack(side="left", padx=(0, 10))
+
+        # User filter
+        ttk.Label(filter_frame, text="User:").pack(side="left", padx=(0, 2))
+        self.filter_vars["user"] = tk.StringVar()
+        self.filter_vars["user"].trace_add("write", lambda *_: self._apply_filters())
+        ttk.Entry(filter_frame, textvariable=self.filter_vars["user"], width=20).pack(side="left", padx=(0, 10))
+
+        # Status filter
+        ttk.Label(filter_frame, text="Status:").pack(side="left", padx=(0, 2))
+        self.filter_vars["status"] = tk.StringVar()
+        self.filter_vars["status"].trace_add("write", lambda *_: self._apply_filters())
+        status_combo = ttk.Combobox(filter_frame, textvariable=self.filter_vars["status"],
+                                     values=["", "assigned", "activated", "available"], width=12, state="readonly")
+        status_combo.pack(side="left", padx=(0, 10))
+
+        # Clear filters button
+        ttk.Button(filter_frame, text="✖ Clear", command=self._clear_filters, width=8).pack(side="left", padx=(5, 0))
 
         # Status
         self.status = ttk.Label(self, text="Initializing…", anchor="w")
@@ -172,21 +203,55 @@ class MainWindow(tk.Tk):
             self._refresh_job = self.after(interval, self._load_tokens)
 
     def _refresh_table(self):
+        self.filtered_tokens = self.tokens.copy()
+        self._apply_filters()
+
+    def _apply_filters(self):
+        """Apply current filters and refresh the treeview."""
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+        serial_filter = self.filter_vars.get("serial", tk.StringVar()).get().lower()
+        user_filter = self.filter_vars.get("user", tk.StringVar()).get().lower()
+        status_filter = self.filter_vars.get("status", tk.StringVar()).get().lower()
+
+        displayed = 0
         for t in self.tokens:
             assigned = t.get("assignedTo") or {}
             user = assigned.get("displayName", "Unassigned") if assigned else "Unassigned"
+            serial = t.get("serialNumber", "")
+            status = t.get("status", "")
+
+            # Apply filters
+            if serial_filter and serial_filter not in serial.lower():
+                continue
+            if user_filter and user_filter not in user.lower():
+                continue
+            if status_filter and status_filter != status.lower():
+                continue
+
             vals = (
-                t.get("serialNumber", ""),
+                serial,
                 f"{t.get('manufacturer', '')}/{t.get('model', '')}",
                 t.get("hashFunction", ""),
                 f"{t.get('timeIntervalInSeconds', 30)}s",
                 user,
-                t.get("status", ""),
+                status,
                 t.get("lastUsedDateTime", "Never"),
             )
             self.tree.insert("", "end", iid=t["id"], values=vals)
+            displayed += 1
+
+        # Update status with filter info
+        if serial_filter or user_filter or status_filter:
+            self.status.config(text=f"{displayed}/{len(self.tokens)} token(s) (filtered)")
+        else:
+            self.status.config(text=f"{len(self.tokens)} token(s)")
+
+    def _clear_filters(self):
+        """Clear all filters."""
+        for var in self.filter_vars.values():
+            var.set("")
 
     def _sort(self, col):
         data = [(self.tree.set(k, col), k) for k in self.tree.get_children("")]
