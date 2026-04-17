@@ -75,7 +75,8 @@ class MainWindow(tk.Tk):
                   font=("", 15, "bold")).pack(side="left", padx=8)
 
         # Right-side buttons (packed right-to-left)
-        ttk.Button(tb, text="Sign out", command=self._sign_out).pack(side="right", padx=3)
+        self.auth_button = ttk.Button(tb, text="Sign In", command=self._toggle_auth)
+        self.auth_button.pack(side="right", padx=3)
         ttk.Button(tb, text="⚙ Settings", command=self._open_settings).pack(side="right", padx=3)
         ttk.Button(tb, text="📥 Import CSV", command=self._open_import).pack(side="right", padx=3)
         ttk.Button(tb, text="🔄 Refresh", command=self._load_tokens).pack(side="right", padx=3)
@@ -145,6 +146,13 @@ class MainWindow(tk.Tk):
 
     # ── sign-in ──────────────────────────────────────────────────────
 
+    def _toggle_auth(self):
+        """Toggle between sign in and sign out."""
+        if self.api:
+            self._sign_out()
+        else:
+            self._sign_in_and_load()
+
     def _sign_in_and_load(self):
         """Acquire a token (silent or interactive) then load the inventory."""
         self.status.config(text="Signing in…")
@@ -155,10 +163,12 @@ class MainWindow(tk.Tk):
                 self.api = GraphClient(self.auth)
                 user = self.auth.signed_in_user or ""
                 self.after(0, lambda: self.user_label.config(text=f"Signed in as {user}"))
+                self.after(0, lambda: self.auth_button.config(text="Sign out", state="normal"))
                 self.after(0, self._load_tokens)
             except Exception as e:
                 self.after(0, lambda: self._error(f"Sign-in failed: {e}"))
                 self.after(0, lambda: self.status.config(text="Not signed in"))
+                self.after(0, lambda: self.auth_button.config(state="normal"))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -171,6 +181,7 @@ class MainWindow(tk.Tk):
             self.api = None
             self.user_label.config(text="")
             self.status.config(text="Signed out")
+            self.auth_button.config(text="Sign In")
             for item in self.tree.get_children():
                 self.tree.delete(item)
 
@@ -357,7 +368,8 @@ class MainWindow(tk.Tk):
         def after():
             self.auth.reset()
             self._schedule_refresh()
-            self._sign_in_and_load()
+            if self.api:
+                self._sign_in_and_load()
         SettingsDialog(self, self.config_mgr, after)
 
     # ── util ─────────────────────────────────────────────────────────
