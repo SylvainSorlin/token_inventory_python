@@ -10,4 +10,4 @@ def get_icon_path():
         return os.path.join(sys._MEIPASS, 'favico.ico')
     else:
         # Running in dev mode
-        return 'favico.ico'"
+        return 'favico.ico'
