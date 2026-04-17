@@ -18,7 +18,7 @@ class SettingsDialog(tk.Toplevel):
         self.on_save = on_save
 
         self.title("Settings")
-        self.geometry("500x400")
+        self.geometry("500x500")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -45,6 +45,20 @@ class SettingsDialog(tk.Toplevel):
 
         self.logs_var = tk.BooleanVar(value=config.show_logs)
         ttk.Checkbutton(ff, text="Show operation logs", variable=self.logs_var).pack(anchor="w", padx=10, pady=(4, 10))
+
+        # Auto-refresh settings
+        rf = ttk.LabelFrame(self, text="Auto-refresh"); rf.pack(padx=16, pady=6, fill="x")
+
+        self.refresh_var = tk.BooleanVar(value=config.auto_refresh)
+        ttk.Checkbutton(rf, text="Enable auto-refresh", variable=self.refresh_var).pack(anchor="w", padx=10, pady=(8, 4))
+
+        interval_frame = ttk.Frame(rf); interval_frame.pack(anchor="w", padx=10, pady=(0, 10))
+        ttk.Label(interval_frame, text="Refresh interval:").pack(side="left", padx=(0, 5))
+        self.interval_var = tk.StringVar(value=str(config.refresh_interval))
+        interval_combo = ttk.Combobox(interval_frame, textvariable=self.interval_var, width=12, state="readonly")
+        interval_combo["values"] = ("10", "20", "30", "60", "600")
+        interval_combo.pack(side="left")
+        ttk.Label(interval_frame, text="seconds").pack(side="left", padx=(5, 0))
 
         # Info
         info = (
@@ -75,6 +89,11 @@ class SettingsDialog(tk.Toplevel):
         self.config.tenant_id = t
         self.config.client_id = c
         self.config.show_logs = self.logs_var.get()
+        self.config.auto_refresh = self.refresh_var.get()
+        try:
+            self.config.refresh_interval = int(self.interval_var.get())
+        except ValueError:
+            pass
         if self.on_save:
             self.on_save()
         self.destroy()

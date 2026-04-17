@@ -33,6 +33,7 @@ class MainWindow(tk.Tk):
         self.auth = AuthManager(self.config_mgr)
         self.api: Optional[GraphClient] = None
         self.tokens = []
+        self._refresh_job = None
 
         if not self.config_mgr.is_configured():
             self._show_welcome()
@@ -132,6 +133,9 @@ class MainWindow(tk.Tk):
 
     def _sign_out(self):
         if messagebox.askyesno("Sign out", "Sign out and clear cached tokens?"):
+            if self._refresh_job:
+                self.after_cancel(self._refresh_job)
+                self._refresh_job = None
             self.auth.sign_out()
             self.api = None
             self.user_label.config(text="")
@@ -152,11 +156,20 @@ class MainWindow(tk.Tk):
                 self.tokens = self.api.fetch_tokens()
                 self.after(0, self._refresh_table)
                 self.after(0, lambda: self.status.config(text=f"{len(self.tokens)} token(s)"))
+                self.after(0, self._schedule_refresh)
             except GraphError as e:
                 self.after(0, lambda: self._error(f"Load failed: {e}"))
                 self.after(0, lambda: self.status.config(text="Load failed"))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _schedule_refresh(self):
+        if self._refresh_job:
+            self.after_cancel(self._refresh_job)
+            self._refresh_job = None
+        if self.config_mgr.auto_refresh:
+            interval = self.config_mgr.refresh_interval * 1000
+            self._refresh_job = self.after(interval, self._load_tokens)
 
     def _refresh_table(self):
         for item in self.tree.get_children():
@@ -278,6 +291,7 @@ class MainWindow(tk.Tk):
     def _open_settings(self):
         def after():
             self.auth.reset()
+            self._schedule_refresh()
             self._sign_in_and_load()
         SettingsDialog(self, self.config_mgr, after)
 

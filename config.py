@@ -61,6 +61,24 @@ class Config:
         self._data["show_logs"] = value
         self._save()
 
+    @property
+    def auto_refresh(self) -> bool:
+        return self._data.get("auto_refresh", False)
+
+    @auto_refresh.setter
+    def auto_refresh(self, value: bool):
+        self._data["auto_refresh"] = value
+        self._save()
+
+    @property
+    def refresh_interval(self) -> int:
+        return self._data.get("refresh_interval", 30)
+
+    @refresh_interval.setter
+    def refresh_interval(self, value: int):
+        self._data["refresh_interval"] = value
+        self._save()
+
     def is_configured(self) -> bool:
         return bool(self.tenant_id and self.client_id)
 
