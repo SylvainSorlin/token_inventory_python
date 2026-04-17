@@ -67,7 +67,7 @@ class SettingsDialog(tk.Toplevel):
 
         # Github
         github_url = "https://github.com/SylvainSorlin/token_inventory_python"
-        url_label = ttk.Label(self, text=github_url, foreground="blue", justify="left", cursor="hand2",
+        url_label = ttk.Label(self, text="View on GitHub", foreground="blue", justify="left", cursor="hand2",
                   font=("", 9))
         url_label.pack(padx=18, anchor="w", pady=(4, 8))
         url_label.bind("<Button-1>", lambda e: webbrowser.open_new(github_url))
