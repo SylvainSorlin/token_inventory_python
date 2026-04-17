@@ -3,9 +3,10 @@ Modal dialogs for token operations (assign, activate, CSV import).
 All dialogs are standard tkinter Toplevel windows — no external UI lib.
 """
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, filedialog
 import threading
 from typing import Callable
+from utils import center_tk_window
 
 from api.graph_api import GraphClient, GraphError
 from api.totp import generate_totp_code
@@ -36,6 +37,9 @@ class AssignDialog(tk.Toplevel):
             self.iconbitmap(get_icon_path())
         except Exception:
             pass
+
+        # Position relative to parent
+        center_tk_window.center_on_parent(parent, self)
 
         ttk.Label(self, text=f"Assign {serial} to…",
                   font=("", 13, "bold")).pack(pady=(12, 4))
@@ -151,8 +155,12 @@ class ActivateDialog(tk.Toplevel):
         except Exception:
             pass
 
+        # Position relative to parent
+        center_tk_window.center_on_parent(parent, self)
+
         ttk.Label(self, text=f"Activate {serial}",
                   font=("", 13, "bold")).pack(pady=(12, 2))
+
         ttk.Label(self, text=f"for {user_name}",
                   foreground="gray").pack(pady=(0, 8))
 
@@ -172,7 +180,7 @@ class ActivateDialog(tk.Toplevel):
         self.act_btn = ttk.Button(bf, text="Activate", command=self._activate)
         self.act_btn.pack(side="left", padx=4)
         ttk.Button(bf, text="Cancel", command=self.destroy).pack(side="left", padx=4)
-
+        
     def _gen(self, _):
         s = self.secret_var.get().strip()
         if s:
@@ -228,6 +236,9 @@ class ImportCSVDialog(tk.Toplevel):
         except Exception:
             pass
 
+        # Position relative to parent
+        center_tk_window.center_on_parent(parent, self)
+
         ttk.Label(self, text="Import CSV Tokens",
                   font=("", 14, "bold")).pack(pady=10)
 
@@ -247,12 +258,15 @@ class ImportCSVDialog(tk.Toplevel):
 
         # CSV text area
         cf = ttk.LabelFrame(self, text="CSV data"); cf.pack(padx=14, pady=4, fill="both", expand=True)
+
+        # Button frame for CSV file selection
+        csv_btn_frame = ttk.Frame(cf)
+        csv_btn_frame.pack(fill="x", padx=4, pady=4)
+        ttk.Button(csv_btn_frame, text="Load CSV File", command=self._load_csv_file).pack(side="left", padx=4)
+
         self.csv_text = tk.Text(cf, wrap="none", font=("Consolas", 10), height=10)
         self.csv_text.pack(fill="both", expand=True, padx=4, pady=4)
         self._on_mode_change()
-        #placeholder = ("upn,serial number,secret key,timeinterval,manufacturer,model\n"
-        #               "user@domain.com,1100000,JBSWY3DPEHPK3PXP,30,Token2,C203")
-        #self.csv_text.insert("1.0", placeholder)
 
         self.status = ttk.Label(self, text="", wraplength=580)
         self.status.pack(pady=4)
@@ -274,6 +288,27 @@ class ImportCSVDialog(tk.Toplevel):
 
         self.csv_text.delete("1.0", "end")
         self.csv_text.insert("1.0", placeholder)
+
+    def _load_csv_file(self):
+        """Load CSV data from a file."""
+        file_path = filedialog.askopenfilename(
+            parent=self,
+            title="Select CSV file",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*")
+            ]
+        )
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    csv_content = f.read()
+                self.csv_text.delete("1.0", "end")
+                self.csv_text.insert("1.0", csv_content)
+                self.status.config(text=f"File loaded: {file_path}", foreground="green")
+            except Exception as e:
+                self.status.config(text=f"Error loading file: {e}", foreground="red")
 
     def _import(self):
         csv_data = self.csv_text.get("1.0", "end-1c").strip()

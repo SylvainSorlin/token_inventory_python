@@ -4,6 +4,7 @@ Settings dialog — Tenant ID + Client ID only. No secret field.
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Callable, Optional
+from utils import center_tk_window
 
 from config import Config
 from . import get_icon_path
@@ -28,6 +29,9 @@ class SettingsDialog(tk.Toplevel):
             self.iconbitmap(get_icon_path())
         except Exception:
             pass
+        
+        # Position relative to parent
+        center_tk_window.center_on_parent(parent, self)
 
         # Form
         ttk.Label(self, text="Microsoft Entra App Settings",
