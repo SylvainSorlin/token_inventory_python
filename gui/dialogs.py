@@ -324,9 +324,21 @@ class ImportCSVDialog(tk.Toplevel):
                 results = self.api.import_csv(csv_data, mode)
                 ok = sum(1 for r in results.values() if r.get("success"))
                 total = len(results)
-                color = "green" if ok == total else "orange"
+
+                if ok == 0:
+                    color = "red"
+                    status_text = f"Done: {ok}/{total} succeeded"
+                elif ok < total:
+                    color = "orange"
+                    status_text = f"Done: {ok}/{total} succeeded"
+                else:
+                    color = "green"
+                    status_text = f"Done: {ok}/{total} succeeded"
+
                 self.after(0, lambda: self.status.config(
-                    text=f"Done: {ok}/{total} succeeded", foreground=color))
+                    text=status_text,
+                    foreground=color
+                ))
                 self.after(1500, self._done)
             except Exception as e:
                 self.after(0, lambda: self.status.config(text=f"Error: {e}", foreground="red"))

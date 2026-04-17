@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 from typing import Dict, Any, Optional
+import time
 
 from config import Config
 from auth import AuthManager
@@ -355,6 +356,7 @@ class MainWindow(tk.Tk):
         def work():
             try:
                 self.api.delete_token(tok["id"])
+                time.sleep(1.5)
                 self.after(0, self._load_tokens)
             except GraphError as e:
                 self.after(0, lambda: self._error(f"Delete failed: {e}"))
