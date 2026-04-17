@@ -1,125 +1,180 @@
-# TOTP Token Inventory: Automate Token2 Classic OATH Token Activation in Microsoft Entra ID
+# TOTP Token Inventory — Python Edition (MSAL Delegated Authentication)
 
----
+> **Fork of [Token2 Token Inventory](https://github.com/token2/token_inventory)** — This is a Python/Tkinter rewrite of the original PHP/PHPDesktop application, using **delegated authentication via MSAL** instead of application credentials.
 
-## **🚀 Key Feature: Automatic Token Activation**
-The **TOTP Token Inventory** app now supports **automatic activation** of Token2 Classic OATH tokens during CSV upload. When tokens are assigned to users in the CSV, the app will:
-- Retrieve the **secret key** of each token.
-- Calculate the **current OTP code** (for both SHA-1 and SHA-256).
-- Send the code to **Microsoft Graph API** for activation.
+Python/Tkinter desktop app for managing hardware OATH tokens (Token2 Classic, C203, etc.) in Microsoft Entra ID, using **interactive delegated authentication via MSAL**.
 
-This **eliminates the need for separate bulk activation tools**, making deployment **faster and more efficient**.
+Every Graph API call runs under the identity of the signed-in technician, with full Conditional Access, MFA, and audit trail.
 
----
+## Architecture
 
-## **1. Overview**
-The **TOTP Token Inventory** app is a **powerful, open-source PHP tool** designed to **automate the management and activation** of **Token2 Classic OATH hardware tokens** in Microsoft Entra ID (Azure AD). Unlike Microsoft’s official tools, this app offers:
-- A **user-friendly web interface**.
-- **Bulk operations** (CSV/JSON import).
-- **Automatic token activation** during CSV upload.
-- **Self-service activation** for end users.
-- **SHA-1 and SHA-256 support**.
-- **Detailed logging** for auditing.
+```
+token_inventory_msal/
+├── main.py                 # Entry point
+├── config.py               # Settings persistence (~/.token_inventory_msal/)
+├── auth.py                 # MSAL PublicClientApplication + token cache
+├── api/
+│   ├── graph_api.py        # Graph client (inventory, assign, activate, CSV import)
+│   └── totp.py             # TOTP code generator (for auto-activation)
+├── gui/
+│   ├── main_window.py      # Main window (toolbar + treeview + context menus)
+│   ├── settings_dialog.py  # Tenant ID + Client ID form (no secret)
+│   └── dialogs.py          # Assign / Activate / Import CSV dialogs
+├── requirements.txt        # msal, requests, pyotp
+├── build_exe.py            # PyInstaller → standalone .exe
+└── run.bat                 # Windows quick launcher
+```
 
----
+**Key design decisions:**
 
-## **2. Comparison: TOTP Token Inventory vs. Microsoft’s Official Tools**
+- **MSAL `PublicClientApplication`** — no client secret at all. Authentication uses `authorization_code` + PKCE handled internally by MSAL. The library opens the system browser for sign-in and listens on a local port for the callback.
+- **Token cache on disk** (`msal_cache.bin`) — MSAL's `SerializableTokenCache` stores the access and refresh tokens locally. On next launch, `acquire_token_silent` reuses the refresh token without opening the browser again (up to 90 days). Cache is cleared on sign-out.
+- **`https://graph.microsoft.com/.default`** as the only scope — since the app registration already declares and has admin-consent for the specific delegated permissions, `.default` tells Entra "give me everything consented on this app". No need to list individual scopes in the code.
+- **Standard tkinter** — no `customtkinter` dependency. Works on Windows, macOS, Linux with the stock Python distribution.
+- **Same Graph API layer** as the upstream project — `fetch_tokens`, `assign_token`, `activate_token`, `import_csv`, etc. all use the beta `hardwareOathDevices` endpoint. The only difference is how the bearer token is obtained.
 
-| Feature                     | Microsoft CSV Blade (Admin Center) | Microsoft Graph API | TOTP Token Inventory (PHP App) |
-|-----------------------------|-----------------------------------|---------------------|--------------------------------|
-| **Automatic Activation**    | ❌ No                              | ❌ No                | ✅ **Yes** (during CSV upload) |
-| **Bulk Import**             | ✅ Yes (CSV only)                 | ✅ Yes               | ✅ **Yes** (CSV/JSON)          |
-| **Self-Service Activation** | ❌ No                              | ✅ Yes               | ✅ **Yes**                     |
-| **SHA-256 Support**         | ❌ No                              | ✅ Yes               | ✅ **Yes**                     |
-| **User-Friendly UI**         | ✅ Basic                           | ❌ No (API only)     | ✅ **Full Web UI**             |
-| **Detailed Logging**        | ❌ No                              | ❌ No                | ✅ **Yes**                     |
-| **No Scripting Required**   | ✅ Yes                             | ❌ No                | ✅ **Yes**                     |
-| **Open-Source**             | ❌ No                              | ❌ No                | ✅ **Yes**                     |
-| **Bundled Windows App**     | ❌ No                              | ❌ No                | ✅ **Yes**                     |
+## Entra app registration setup
 
----
+1. **New registration** → single tenant, no redirect URI yet.
+2. **Authentication blade:**
+   - Add platform → **Mobile and desktop applications** (this is what MSAL's `acquire_token_interactive` expects)
+   - Add redirect URI: `http://localhost`
+   - Set **Allow public client flows = Yes**
+3. **API permissions** → Microsoft Graph → **Delegated** (not Application):
+   - `Policy.ReadWrite.AuthenticationMethod`
+   - `UserAuthenticationMethod.ReadWrite.All`
+   - `User.Read.All`
+   - `Directory.Read.All`
+   - `offline_access` (for refresh tokens — usually auto-included)
+4. **Grant admin consent** — Privileged Role Administrator or Global Administrator and Authentication Policy Administrator, one time.
+5. **Certificates & secrets** → leave empty. Nothing.
+6. Copy **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
 
-## **3. Why Choose TOTP Token Inventory?**
-- **Automatic Activation**: The **only solution** that activates tokens during CSV import, eliminating manual steps.
-- **User-Friendly**: No scripting required; accessible via a **web UI**.
-- **Bulk Operations**: Import and assign **hundreds of tokens at once**.
-- **Self-Service**: Users activate tokens **without admin intervention**.
-- **SHA-256 Support**: Handles both **SHA-1 and SHA-256** tokens.
-- **Open-Source**: Free to use, modify, and deploy.
-- **Bundled App**: Run on **Windows without a server** using PHPDesktop.
+## Install and run
 
----
+### Option A: from source (recommended for dev/test)
 
-## **4. Pre-Requisites**
-- **Server**: Works on **any server with PHP 7.4+** (Linux/Windows).
-- **Bundled App**: Also available as a **PHPDesktop-based Windows app** (no server required).
-- **Microsoft Entra ID**:
-  - **Tenant ID**, **Client ID**, and **Client Secret** (from an App Registration with **Graph API permissions**).
-  - **Required permissions**:
-    - `Policy.ReadWrite.AuthenticationMethod`
-    - `UserAuthenticationMethod.ReadWrite.All`
-    - `User.Read.All`
-    - `Directory.Read.All`
-  - **Admin consent** for the above permissions.
-- **Token2 Classic Tokens**: **CSV file** with token details (serial number, secret key, UPN, etc.).
-  - **CSVs for factory-set seeds are provided by Token2** via the seed request procedure.
+```bash
+# Python 3.10+
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
----
+pip install -r requirements.txt
+python main.py
+```
 
-## **5. Supported Formats**
+Or on Windows: double-click `run.bat`.
 
-| Format  | Use Case                                  | Description                                                                                     |
-|---------|-------------------------------------------|-------------------------------------------------------------------------------------------------|
-| **CSV**  | Bulk import with pre-assignment and **automatic activation** | Admins can **pre-assign tokens to users** in the CSV. The app **automatically activates** these tokens by calculating the OTP code and sending it to Graph API. **CSVs for factory-set seeds are provided by Token2**. |
-| **JSON** | Self-service repository                   | Tokens are uploaded to a **shared repository**. Users activate them via **Security Info**.     |
+### Option B: standalone .exe
 
----
+```bash
+pip install pyinstaller
+python build_exe.py
+# Output: dist/TokenInventory.exe
+```
 
-## **6. Step-by-Step Guide**
+## First launch
 
-### **A. Initial Setup**
-1. **Download and install**:
-   - Deploy on a **PHP server** or use the **bundled Windows app**.
-2. **Enter credentials**:
-   - Provide your **Tenant ID**, **Client ID**, and **Client Secret**.
-3. **Verify permissions**:
-   - Ensure the app has the required **Graph API permissions** and admin consent.
+1. The app opens with a welcome screen → click **Configure app settings**.
+2. Enter the **Tenant ID** and **Client ID** from your Entra app registration. No secret.
+3. Click **Save**. The app opens your system browser to the Microsoft sign-in page.
+4. Authenticate with your Entra account (MFA, CA policies apply as usual).
+5. The browser shows "Authentication complete" → close the tab → back in the app, the token inventory loads automatically.
+6. Top-right shows **Signed in as `your.name@contoso.com`**.
 
-### **B. Importing Tokens**
-1. **Prepare your CSV**:
-   - Include columns: `upn`, `serial number`, `secret key`, `timeinterval`, `manufacturer`, `model`.
-   - **Pre-assign tokens** by including user UPNs. The app will **automatically activate** these tokens.
-   - **CSVs for factory-set seeds are provided by Token2** via the seed request procedure.
-2. **Upload CSV/JSON**:
-   - Use the **web interface** to upload your file.
-   - The app **automatically converts CSV to JSON** for Graph API and **activates pre-assigned tokens**.
+On subsequent launches, sign-in is silent (refresh token) — the browser won't open unless the token has expired (90 days) or been revoked.
 
-### **C. Assigning Tokens**
-- **Search for users** and assign tokens via the **web UI**.
-- **Bulk assignment**: Assign multiple tokens at once using the CSV pre-assignment feature.
+## Usage
 
-### **D. Activating Tokens**
-- **Automatic activation**: When tokens are pre-assigned in the CSV, the app **automatically activates them** by calculating the OTP code and sending it to Graph API.
-- **User self-service**: Users activate tokens via the **web form** or their **Security Info page**.
-- **Auto-generation**: The app can **auto-generate TOTP codes** from the secret key for activation.
+### View inventory
 
-### **E. Managing Tokens**
-- **Unassign/Delete**: Remove tokens from users or delete them permanently.
-- **Logs**: View detailed logs for all operations.
+The main table shows all hardware OATH tokens in the tenant, with serial number, device model, hash function, assigned user, status (available / assigned / activated), and last used date. Click any column header to sort.
 
----
+### Assign a token
 
-## **7. Best Practices**
-- **Backup credentials**: Store your **Client Secret** securely.
-- **Test with a small batch**: Validate the workflow before bulk importing.
-- **Monitor logs**: Use logs to audit operations and troubleshoot issues.
-- **Keep permissions updated**: Ensure Graph API permissions are current.
+Right-click an unassigned token → **Assign to user…** → search by name or UPN → select → click **Assign**.
 
----
+### Activate a token
 
-## **8. Conclusion**
-The **TOTP Token Inventory** app is the **only solution** that offers **automatic token activation** during CSV import, making it the **most efficient way** to deploy and manage **Token2 Classic OATH tokens** in Microsoft Entra ID. With its **user-friendly interface**, **bulk operations**, and **self-service activation**, it provides a **complete, scalable, and auditable** solution for organizations of all sizes.
+Right-click an assigned (but not activated) token → **Activate…** → two options:
+- **Manual**: press the button on the physical token, read the 6-digit code, type it in.
+- **Auto-generate**: paste the token's base32 secret key → the app computes the current TOTP code and fills it in automatically.
 
-**Say goodbye to manual activation processes—TOTP Token Inventory automates everything.**
+### Import CSV (bulk)
 
- 
+Click **📥 Import CSV** → paste a Token2 CSV → choose the mode:
+- **Import only**: creates the tokens in the tenant inventory (unassigned).
+- **Import & Assign**: creates + assigns to the user in the `upn` column.
+- **Import, Assign & Activate**: does all three in one shot (auto-computes the OTP from the secret key). This is the fastest mode for bulk deployment.
+
+CSV format:
+```csv
+upn,serial number,secret key,timeinterval,manufacturer,model
+alice@contoso.com,GALT11420104,C2dE3fH4iJ5kL6mN7oP1qR2sT3uV4w,30,Token2,C203
+```
+
+### Sign out
+
+Click **Sign out** → clears the MSAL token cache and removes the account locally. Does not revoke the refresh token on the Microsoft side (that requires a separate admin action in Entra if needed).
+
+## Role requirements
+
+The signed-in user must hold the appropriate Entra role:
+
+| Action | Minimum role |
+|---|---|
+| Provision tokens (import into inventory) | Authentication Policy Administrator |
+| Assign / activate / unassign tokens | Authentication Administrator |
+| Delete tokens from inventory | Authentication Policy Administrator |
+| Search users | User.Read.All (delegated permission, no role needed) |
+
+If the account lacks the required role, Graph returns HTTP 403 and the app displays the error.
+
+## Security
+
+- **No client secret** stored anywhere — not in config, not in memory, not on disk. The MSAL `PublicClientApplication` uses PKCE internally, which is a per-session ephemeral secret.
+- **Refresh token** is stored in `~/.token_inventory_msal/msal_cache.bin`. This file is the most sensitive artifact on disk: anyone who obtains it can impersonate the technician (within the scope of the delegated permissions) until the token expires. Mitigations:
+  - The file is user-readable only (created under the user's home directory).
+  - Sign out clears and deletes the file.
+  - Entra's Conditional Access policies (device compliance, named locations) apply to the refresh token at renewal time.
+  - On shared workstations, each technician should use a separate OS user account.
+- **Audit trail**: every Graph API call appears in the Entra audit logs under the technician's real UPN, not a service principal. Searching "who assigned token X?" gives a direct answer.
+- **Conditional Access**: MFA, device compliance, named locations, risk-based policies all apply — the sign-in goes through the standard Entra evaluation pipeline.
+
+## Differences from the original project
+
+| | Original (Token2 - PHP/PHPDesktop) | This fork (Python/Tkinter) |
+|---|---|---|
+| Technology | PHP web app + PHPDesktop bundle | Python desktop app (Tkinter) |
+| Auth flow | `client_credentials` (app secret) | `authorization_code` + PKCE via MSAL (interactive) |
+| Client secret | Required, stored in config | Not used, not stored anywhere |
+| Graph permissions | Application | Delegated |
+| Audit identity | Service principal | Human user (UPN) |
+| Token cache | N/A (new token per session) | MSAL `SerializableTokenCache` on disk (silent refresh for 90 days) |
+| Conditional Access | Doesn't apply (app flow) | Fully applies (user flow) |
+| Dependencies | PHP 7.4+, web server or PHPDesktop | Python 3.10+, `msal`, `requests`, `pyotp` |
+| UI | Web interface (Bootstrap) | Native desktop (Tkinter) |
+
+## Troubleshooting
+
+**Browser opens but sign-in fails with AADSTS70011**
+The app registration is missing required delegated scopes or admin consent hasn't been granted. Check API permissions in Entra.
+
+**Browser opens but sign-in fails with AADSTS7000218**
+"Allow public client flows" is not set to Yes in the app registration's Authentication blade.
+
+**HTTP 403 on every Graph call**
+Your account lacks the required Entra role (Authentication Administrator or Authentication Policy Administrator). The delegated permissions are granted to the app, but the role determines what the *user* is allowed to do through those permissions.
+
+**"Sign-in failed: User cancelled"**
+The user closed the browser tab before completing authentication. Click Refresh to try again.
+
+**Token cache doesn't refresh (browser opens every time)**
+The `offline_access` scope may not be consented. Add it to the app's delegated permissions and re-consent.
+
+## License
+
+Same license as the upstream project.
